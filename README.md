@@ -2,13 +2,14 @@
 Đây là một chương trình được viết trong Python 3, sử dụng OpenCV và MediaPipe để có thể theo dõi động tác người dùng khi tập luyện (Squat, Plank và hít đất). Tạo file tóm tắt sau khi người dùng thoát phần mềm
 
 ## Thư viện phụ thuộc
-Chương trình này sử dụng OpenCV và MediaPipe, viết bằng ngôn ngữ Python 3+
+Chương trình này sử dụng Numpy, OpenCV và MediaPipe, viết bằng ngôn ngữ Python 3+
 
 Tải và cài đặt Python: [Python 3](https://www.python.org/downloads/)
 
 Sử dụng  [pip](https://pip.pypa.io/en/stable/) để cài thư viện/framework:
 
 ```bash
+pip install numpy
 pip install opencv-python
 pip install mediapipe
 ```
