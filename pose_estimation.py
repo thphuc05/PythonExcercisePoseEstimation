@@ -321,8 +321,3 @@ def main(video_source=0):
 
 if __name__ == "__main__":
     main(video_source=0)
-
-# GOI Y MO RONG CHO SINH VIEN:
-# 1. Them danh gia "dung ky thuat/sai ky thuat" dua tren nguong goc luon lung,dau goi. - sửa logic, tính thêm góc lưng và đầu gối - DONE (Co the chinh sua sau)
-# 2. Mo rong sang bai tap khac: plank (do thoi gian giu tu the), hit dat (dem so lan qua goc khuyu tay). - lựa họn khi khởi động chương trình? - DONE - su dung nut 1, 2, 3 tren phim so
-# 3. Ghi lai lich su tap luyen (so lan, thoi gian) vao file de theo doi tien do qua nhieu buoi. - thêm biến lưu dữ liệu, ghi lại vào bộ nhớ sau khi tắt chương trình - DONE - luu vao folder rieng
