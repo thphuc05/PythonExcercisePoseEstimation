@@ -23,3 +23,8 @@ Sau khi đã cài đặt đầy đủ các thư viện phụ thuộc (dependenci
 ```bash
 python3 pose_estimation.py
 ```
+
+## Thông tin khác
+
+Chương trình chạy thử trên model **Full** sử dụng Python 3.14.7
+
