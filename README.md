@@ -16,3 +16,9 @@ Tải một mô hình từ Google:
 
 [Pose landmark detection guide](https://developers.google.com/edge/mediapipe/solutions/vision/pose_landmarker)
 
+
+## Sử dụng
+Sau khi đã cài đặt đầy đủ các thư viện phụ thuộc (dependencies) trong môi trường ảo (virtual environment), hãy chạy chương trình bằng nút Run trên IDE của bạn hoặc thông command line:
+```bash
+python3 pose_estimation.py
+```
