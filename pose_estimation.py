@@ -41,6 +41,7 @@ class ExerciseConfig:
     elbow_angle_down_entry: float = None
     plank_hip_min: float = None
     hold_frames_required: int = None
+    body_straight_min: float = None
 
 # Góc yêu cầu của mỗi bài tập
 EXERCISE_CONFIGS = {
@@ -48,7 +49,7 @@ EXERCISE_CONFIGS = {
                    hip_angle_up=160, correct_knee_max=95, correct_hip_max=95),    
     2: ExerciseConfig(name="Plank", plank_hip_min=160, hold_frames_required=60),        #Plank
     3: ExerciseConfig(name="PushUp", elbow_angle_up=160, elbow_angle_down_entry=90,
-                       correct_elbow_max=90)                                            #PushUp
+                       correct_elbow_max=90, body_straight_min=160)                                            #PushUp
 }
 
 # Hàm tính góc
@@ -103,8 +104,11 @@ POSE_CONNECTIONS = [
     # Mặt
     (0, 1), (1, 2), (2, 3), (3, 7), (0, 4), (4, 5), (5, 6), (6, 8), (9, 10), 
 
-    # Tay trái
+    # Thân 
     (11, 12), (11, 23), (12, 24), (23, 24),
+
+    # Tay trái
+    (11, 13), (13, 15), (15, 17), (15, 19), (15, 21),
 
     # Tay phải
     (12, 14), (14, 16), (16, 18), (16, 20), (16, 22),
@@ -173,39 +177,13 @@ def main(video_source=0):
                 shouder = [landmarks[PoseLandmark.LEFT_SHOULDER].x, landmarks[PoseLandmark.LEFT_SHOULDER].y]        # Vai
                 elbow = [landmarks[PoseLandmark.LEFT_ELBOW].x, landmarks[PoseLandmark.LEFT_ELBOW].y]                # Khuỷu tay
                 wrist = [landmarks[PoseLandmark.LEFT_WRIST].x, landmarks[PoseLandmark.LEFT_WRIST].y]                # Cổ tay
- 
+                foot = [landmarks[PoseLandmark.LEFT_FOOT_INDEX].x, landmarks[PoseLandmark.LEFT_FOOT_INDEX].y]
+
                 hip_angle = calculate_angle(knee, hip, shouder) # Góc hông
                 knee_angle = calculate_angle(hip, knee, ankle) # Góc đầu gối
                 elbow_angle = calculate_angle(wrist, elbow, shouder) # Góc khuỷu tay
-
-                # Chọn chế độ
-                key = cv2.waitKey(1) & 0xFF # Chờ nút nhán đơn vị ms
-
-                if key == ord("q"):         # Q = thoát
-                    break
-
-                new_mode = None
-                if key == ord("1"):         # Chế độ 1 - Squat
-                    new_mode = 1
-                elif key == ord("2"):       # Chế độ 2 - Plank
-                    new_mode = 2
-                elif key == ord("3"):       # Chế độ 3 - Hít đất
-                    new_mode = 3
-
-                if new_mode is not None and new_mode != excercise_mode:             # Check xem đảm bảo có đang chạy một trong các chế độ và chế độ đó có phải là có trong chương trình không
-                    if excercise_mode == 2 and timer_running:                       # Nếu chế độ 2 và bộ đếm đang chạy
-                        results[2]["time_held"] += time.time() - plank_start_time   # Ghi kết quả = thời gian giữ - thời gian sẵn sàng
-                        timer_running = False                                       # Xong hủ bộ đếm, không cho chạy lúc đang ở bài tập khác
-                    excercise_mode = new_mode                                       # Đổi sang bài tập theo nút nhấn
-                    cfg = EXERCISE_CONFIGS[excercise_mode]                          # Lựa chọn config bài tập
-
-                    # Reset lại các giá trị - không reset thì sẽ tính sai, đặc biệt là khi đổi trong khi đang đếm
-                    stage = None
-                    min_knee_angle = 180
-                    min_hip_angle = 180
-                    min_elbow_angle = 180 
-                    down_frame_counter = 0
-                    print(f"Chuyen sang bai tap: {cfg.name}")
+                body_line_angle = calculate_angle(shouder, hip, ankle)  # Đo nguyên người - dành cho hít đất
+                ankle_angle = calculate_angle(knee, ankle, foot) # Goc co chan
 
                 # Ô vuông góc trên cùng trái
                 cv2.rectangle(frame, (0, 0), (280, 100), (0, 0, 0), -1)
@@ -270,27 +248,32 @@ def main(video_source=0):
                 if (excercise_mode == 3):
                     cv2.putText(frame, f"So lan dung: {results[3]['correct']}", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
                     cv2.putText(frame, f"So lan sai: {results[3]['wrong']}", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+                    body_line_angle = calculate_angle(shouder, hip, ankle)
+                    is_body_straight = body_line_angle > cfg.body_straight_min
 
-                    if elbow_angle > cfg.elbow_angle_up:
+                    if is_body_straight:
+                        if elbow_angle > cfg.elbow_angle_up:
+                            if stage == "down":
+                                if min_elbow_angle < cfg.correct_elbow_max:
+                                    results[3]["correct"] += 1
+                                    print(f"Hit dat dung! So lan dung: {results[3]['correct']}")
+                                else:
+                                    results[3]["wrong"] += 1
+                                    print(f"Hit dat sai! So lan sai: {results[3]['wrong']}")
+                            stage = "up"
+                            min_elbow_angle = 180
+
+                        if elbow_angle < cfg.elbow_angle_down_entry and stage == "up":
+                            stage = "down"
+
                         if stage == "down":
-                            if min_elbow_angle < cfg.correct_elbow_max:
-                                results[3]["correct"] += 1
-                                print(f"Hit dat dung! So lan dung: {results[3]['correct']}")
+                            min_elbow_angle = min(min_elbow_angle, elbow_angle)
+                            if elbow_angle > cfg.correct_elbow_max:
+                                cv2.putText(frame, "Tu the sai!", (10, 200), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
                             else:
-                                results[3]["wrong"] += 1
-                                print(f"Hit dat sai! So lan sai: {results[3]['wrong']}")
-                        stage = "up"
-                        min_elbow_angle = 180
-
-                    if elbow_angle < cfg.elbow_angle_down_entry and stage == "up":
-                        stage = "down"
-
-                    if stage == "down":
-                        min_elbow_angle = min(min_elbow_angle, elbow_angle)
-                        if elbow_angle > cfg.correct_elbow_max:
-                            cv2.putText(frame, "Tu the sai!", (10, 200), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-                        else:
-                            cv2.putText(frame, "Tu the dung!", (10, 200), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)                
+                                cv2.putText(frame, "Tu the dung!", (10, 200), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+                    else:
+                        cv2.putText(frame, "Vui long vao tu the hit dat!", (10, 200), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)             
                         
                 draw_landmarks_manual(frame, landmarks)
                 if (excercise_mode == 1):
@@ -299,10 +282,40 @@ def main(video_source=0):
                 elif (excercise_mode == 3):
                     cv2.putText(frame, f"Goc hong: {int(hip_angle)}", (10, 130), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
                     cv2.putText(frame, f"Goc khuyu tay: {int(elbow_angle)}", (10, 150), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
+                    cv2.putText(frame, f"Goc got chan: {int(ankle_angle)}", (10, 170), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
                 else:
                     cv2.putText(frame, f"Goc hong: {int(hip_angle)}", (10, 130), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
+                    cv2.putText(frame, f"Goc khuyu tay: {int(elbow_angle)}", (10, 150), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
 
-            # Hien thi bang demq
+            # Chọn chế độ
+            key = cv2.waitKey(1) & 0xFF
+
+            if key == ord("q"):         # Q = thoát
+                break
+            
+            new_mode = None
+            if key == ord("1"):         # Chế độ 1 - Squat
+                new_mode = 1
+            elif key == ord("2"):       # Chế độ 2 - Plank
+                new_mode = 2
+            elif key == ord("3"):       # Chế độ 3 - Hít đất
+                new_mode = 3
+
+            if new_mode is not None and new_mode != excercise_mode:             # Check xem đảm bảo có đang chạy một trong các chế độ và chế độ đó có phải là có trong chương trình không
+                if excercise_mode == 2 and timer_running:                       # Nếu chế độ 2 và bộ đếm đang chạy
+                    results[2]["time_held"] += time.time() - plank_start_time   # Ghi kết quả = thời gian giữ - thời gian sẵn sàng
+                    timer_running = False                                       # Xong hủ bộ đếm, không cho chạy lúc đang ở bài tập khác
+                excercise_mode = new_mode                                       # Đổi sang bài tập theo nút nhấn
+                cfg = EXERCISE_CONFIGS[excercise_mode]                          # Lựa chọn config bài tập
+
+                # Reset lại các giá trị - không reset thì sẽ tính sai, đặc biệt là khi đổi trong khi đang đếm
+                stage = None
+                min_knee_angle = 180
+                min_hip_angle = 180
+                min_elbow_angle = 180 
+                down_frame_counter = 0
+                print(f"Chuyen sang bai tap: {cfg.name}")
+                
             cv2.imshow("Phan tich dong tac the duc - Nhan Q de thoat", frame)
                 
 
