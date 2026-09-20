@@ -210,7 +210,7 @@ def main(video_source=0):
                 # Ô vuông góc trên cùng trái
                 cv2.rectangle(frame, (0, 0), (280, 100), (0, 0, 0), -1)
 
-                # Hien thi ten bai tap va thong ke tuong ung
+                # Hiển thị tên bài tập và thống kê tương ứng
                 cv2.putText(frame, f"Bai tap: {cfg.name}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
 
                 # Logic đánh giá tuỳ theo bài tạp
@@ -250,22 +250,23 @@ def main(video_source=0):
                     if (excercise_mode == 2):
                         if hip_angle > cfg.plank_hip_min:
                             down_frame_counter += 1
-                            # Chi bat dau bam gio sau khi giu tu the du so frame yeu cau (mac dinh 60 frame / 30fps = 2s)
+                            # Chỉ bắt đầu đếm giờ sau khi giữ tư thế đủ lâu (60 frame / 30fps = 2s)
                             if down_frame_counter >= cfg.hold_frames_required and not timer_running:
                                 timer_running = True
                                 plank_start_time = time.time()
-                        else:# Nếu như tư thế bị hỏng và đang bấm giờ thì cộng thời gian vừa giữ vào tổng rồi dừng bấm giờ
+                        else: # Nếu như tư thế bị hỏng và đang bấm giờ thì cộng thời gian vừa giữ vào tổng rồi dừng bấm giờ
                             if timer_running:
                                 results[2]["time_held"] += time.time() - plank_start_time
                                 timer_running = False
                             down_frame_counter = 0      # Reset lại bộ đếm giữ tư thế
 
-                    # Hien thi thoi gian giu tu the
+                    # Hiển thị thời gian giữ tư thế
                     if timer_running:
                         current_hold = results[2]["time_held"] + (time.time() - plank_start_time)
                     else:
                         current_hold = results[2]["time_held"]
 
+                # Cách theo dõi của hít đất giống với squat nhưng tính góc khác
                 if (excercise_mode == 3):
                     cv2.putText(frame, f"So lan dung: {results[3]['correct']}", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
                     cv2.putText(frame, f"So lan sai: {results[3]['wrong']}", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
@@ -292,11 +293,14 @@ def main(video_source=0):
                             cv2.putText(frame, "Tu the dung!", (10, 200), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)                
                         
                 draw_landmarks_manual(frame, landmarks)
-                if (excercise_mode == 1 or excercise_mode == 3):
+                if (excercise_mode == 1):
                     cv2.putText(frame, f"Goc goi: {int(knee_angle)}", (10, 130), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
                     cv2.putText(frame, f"Goc hong: {int(hip_angle)}", (10, 150), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
+                elif (excercise_mode == 3):
+                    cv2.putText(frame, f"Goc hong: {int(hip_angle)}", (10, 130), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
+                    cv2.putText(frame, f"Goc khuyu tay: {int(elbow_angle)}", (10, 150), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
                 else:
-                    cv2.putText(frame, f"Goc khuyu tay: {int(knee_angle)}", (10, 130), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
+                    cv2.putText(frame, f"Goc hong: {int(hip_angle)}", (10, 130), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
 
             # Hien thi bang demq
             cv2.imshow("Phan tich dong tac the duc - Nhan Q de thoat", frame)
@@ -307,8 +311,9 @@ def main(video_source=0):
     if excercise_mode == 2 and timer_running:
         results[2]["time_held"] += time.time() - plank_start_time
 
+    # Đổi đường dẫn và tên folder đầu ra ở đâu
     output_dir = "workout_results"
-    os.makedirs(output_dir, exist_ok=True)
+    os.makedirs(output_dir, exist_ok=True)  # Nếu chưa có thì sẽ tự tạo thêm folder mới
 
     filename = os.path.join(output_dir, f"workout_results_{time.strftime('%Y-%m-%d_%H-%M-%S')}.txt")
     with open(filename, "w", encoding="utf-8") as f:
