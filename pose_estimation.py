@@ -31,12 +31,12 @@ options = PoseLandmarkerOptions(
 @dataclass
 class ExerciseConfig:
     name: str                               # Tên bài tập
-    knee_angle_up: float = None                 
-    knee_angle_down_entry: float = None
-    hip_angle_up: float = None
-    correct_knee_max: float = None
-    correct_hip_max: float = None
-    correct_elbow_max: float = None
+    knee_angle_up: float = None             # Góc gối để tính trạng thái UP    
+    knee_angle_down_entry: float = None     # Ngưỡng gối để tính DOWN
+    hip_angle_up: float = None              # Góc hông để tính trạng thái UP  
+    correct_knee_max: float = None          # Ngưỡng gối để khi squat đủ sẽ tính là "Đúng"
+    correct_hip_max: float = None           # Ngưỡng hông để khi squat đủ sẽ tính là "Đúng"
+    correct_elbow_max: float = None         # Ngưỡng khuỷu tay để khi squhít đất đủ sẽ tính là "Đúng"
     elbow_angle_up: float = None
     elbow_angle_down_entry: float = None
     plank_hip_min: float = None
@@ -177,13 +177,13 @@ def main(video_source=0):
                 shouder = [landmarks[PoseLandmark.LEFT_SHOULDER].x, landmarks[PoseLandmark.LEFT_SHOULDER].y]        # Vai
                 elbow = [landmarks[PoseLandmark.LEFT_ELBOW].x, landmarks[PoseLandmark.LEFT_ELBOW].y]                # Khuỷu tay
                 wrist = [landmarks[PoseLandmark.LEFT_WRIST].x, landmarks[PoseLandmark.LEFT_WRIST].y]                # Cổ tay
-                foot = [landmarks[PoseLandmark.LEFT_FOOT_INDEX].x, landmarks[PoseLandmark.LEFT_FOOT_INDEX].y]
+                foot = [landmarks[PoseLandmark.LEFT_FOOT_INDEX].x, landmarks[PoseLandmark.LEFT_FOOT_INDEX].y]       # Bàn Chân
 
                 hip_angle = calculate_angle(knee, hip, shouder) # Góc hông
                 knee_angle = calculate_angle(hip, knee, ankle) # Góc đầu gối
                 elbow_angle = calculate_angle(wrist, elbow, shouder) # Góc khuỷu tay
                 body_line_angle = calculate_angle(shouder, hip, ankle)  # Đo nguyên người - dành cho hít đất
-                ankle_angle = calculate_angle(knee, ankle, foot) # Goc co chan
+                ankle_angle = calculate_angle(knee, ankle, foot) # Góc cổ chân
 
                 # Ô vuông góc trên cùng trái
                 cv2.rectangle(frame, (0, 0), (280, 100), (0, 0, 0), -1)
@@ -244,12 +244,11 @@ def main(video_source=0):
                     else:
                         current_hold = results[2]["time_held"]
 
-                # Cách theo dõi của hít đất giống với squat nhưng tính góc khác
+                # Cách theo dõi của hít đất gần giống với squat nhưng tính góc khác
                 if (excercise_mode == 3):
                     cv2.putText(frame, f"So lan dung: {results[3]['correct']}", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
                     cv2.putText(frame, f"So lan sai: {results[3]['wrong']}", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
-                    body_line_angle = calculate_angle(shouder, hip, ankle)
-                    is_body_straight = body_line_angle > cfg.body_straight_min
+                    is_body_straight = body_line_angle > cfg.body_straight_min # Người có đang thẳng không?
 
                     if is_body_straight:
                         if elbow_angle > cfg.elbow_angle_up:
@@ -273,16 +272,18 @@ def main(video_source=0):
                             else:
                                 cv2.putText(frame, "Tu the dung!", (10, 200), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
                     else:
-                        cv2.putText(frame, "Vui long vao tu the hit dat!", (10, 200), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)             
+                        cv2.putText(frame, "Vui long vao tu the hit dat!", (10, 200), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)   # Không thẳng = không tính logic đúng sai          
                         
                 draw_landmarks_manual(frame, landmarks)
+
+                # Thông tin bài tập hiện tại + các góc cơ thể liên quan
                 if (excercise_mode == 1):
                     cv2.putText(frame, f"Goc goi: {int(knee_angle)}", (10, 130), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
                     cv2.putText(frame, f"Goc hong: {int(hip_angle)}", (10, 150), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
                 elif (excercise_mode == 3):
                     cv2.putText(frame, f"Goc hong: {int(hip_angle)}", (10, 130), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
                     cv2.putText(frame, f"Goc khuyu tay: {int(elbow_angle)}", (10, 150), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
-                    cv2.putText(frame, f"Goc got chan: {int(ankle_angle)}", (10, 170), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
+                    cv2.putText(frame, f"Goc mat ca chan: {int(ankle_angle)}", (10, 170), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
                 else:
                     cv2.putText(frame, f"Goc hong: {int(hip_angle)}", (10, 130), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
                     cv2.putText(frame, f"Goc khuyu tay: {int(elbow_angle)}", (10, 150), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
