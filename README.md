@@ -1,4 +1,18 @@
-**Vietnamese below**
+# Python Pose Estimation
+Đây là một chương trình được viết trong Python 3, sử dụng OpenCV và MediaPipe để có thể theo dõi động tác người dùng khi tập luyện (Squat, Plank và hít đất). Tạo file tóm tắt sau khi người dùng thoát phần mềm
 
-# Python Excercise Pose Estimation
-A simple Python program that use MediaPipe Pose Landmarker and OpenCV to track your excercises (Squat, Plank and Push Up)
+## Thư viện phụ thuộc
+Chương trình này sử dụng OpenCV và MediaPipe, viết bằng ngôn ngữ Python 3+
+
+Tải và cài đặt Python: [Python 3](https://www.python.org/downloads/)
+
+Sử dụng  [pip](https://pip.pypa.io/en/stable/) để cài thư viện/framework:
+
+```bash
+pip install opencv-python
+pip install mediapipe
+```
+Tải một mô hình từ Google:
+
+[Pose landmark detection guide](https://developers.google.com/edge/mediapipe/solutions/vision/pose_landmarker)
+
