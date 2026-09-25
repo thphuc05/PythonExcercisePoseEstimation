@@ -8,7 +8,7 @@ from mediapipe.tasks.python import vision
 from enum import IntEnum
 from dataclasses import dataclass
 
-model_path = './pose_landmarker_full.task' # Chương trình này sử dụng MediaPipe Model Pose Landmarker Full để quan sát các khớp
+model_path = 'BaiThuyetTrinh/pose_landmarker_full.task' # Chương trình này sử dụng MediaPipe Model Pose Landmarker Full để quan sát các khớp
 
 # Cài đặt ban đầu cho mô hình
 BaseOptions = mp.tasks.BaseOptions
@@ -22,9 +22,9 @@ options = PoseLandmarkerOptions(
     base_options=BaseOptions(model_asset_path=model_path),
     running_mode=VisionRunningMode.VIDEO, # Chế độ chạy - được đặt thành video thời gian thực
     num_poses = 1, # Số dáng nhận diện, ở đây chỉ có thể nhận 1 người
-    #min_pose_detection_confidence = 0.5, # Độ chính xác tối thiểu để có thể xác nhận dáng
-    #min_pose_presence_confidence = 0.5, # Độ chính xác tối thiểu để có thể xác nhận sự hiện diện
-    #min_tracking_confidence = 0.5, # Độ chính xác tối thiểu để có thể xác nhận việc nhận dạng là chính xá
+    min_pose_detection_confidence = 0.7, # Độ chính xác tối thiểu để có thể xác nhận dáng người thành công
+    min_pose_presence_confidence = 0.6, # Độ chính xác tối thiểu để có thể xác nhận sự hiện diện
+    min_tracking_confidence = 0.7, # Độ chính xác tối thiểu để có thể xác nhận việc nhận dạng là chính xác và lấy giá trị toạ độ từ đó
 )
 
 # Config bài tập - khởi tạo
@@ -34,6 +34,7 @@ class ExerciseConfig:
     knee_angle_up: float = None             # Góc gối để tính trạng thái UP    
     knee_angle_down_entry: float = None     # Ngưỡng gối để tính DOWN
     hip_angle_up: float = None              # Góc hông để tính trạng thái UP  
+    hip_drop_min: float = None              # Góc hông thấp tối thiểu - Tính theo toạ độ Y của hình ảnh đầu vào, KHÔNG phải tính góc. Giá trị vì thế cũng chuẩn hoá về (0-1) so với toàn bộ cơ thể
     correct_knee_max: float = None          # Ngưỡng gối để khi squat đủ sẽ tính là "Đúng"
     correct_hip_max: float = None           # Ngưỡng hông để khi squat đủ sẽ tính là "Đúng"
     correct_elbow_max: float = None         # Ngưỡng khuỷu tay để khi squhít đất đủ sẽ tính là "Đúng"
@@ -46,9 +47,9 @@ class ExerciseConfig:
 # Góc yêu cầu của mỗi bài tập
 EXERCISE_CONFIGS = {
     1: ExerciseConfig(name="Squat", knee_angle_up=160, knee_angle_down_entry=100,       # Squat
-                   hip_angle_up=160, correct_knee_max=95, correct_hip_max=95),    
+                   hip_angle_up=160, correct_knee_max=95, correct_hip_max=95, hip_drop_min=0.08),    
     2: ExerciseConfig(name="Plank", plank_hip_min=160, hold_frames_required=60),        #Plank
-    3: ExerciseConfig(name="PushUp", elbow_angle_up=160, elbow_angle_down_entry=90,
+    3: ExerciseConfig(name="PushUp", elbow_angle_up=160, elbow_angle_down_entry=90,     
                        correct_elbow_max=90, body_straight_min=160)                                            #PushUp
 }
 
@@ -135,10 +136,14 @@ def main(video_source=0):
     stage = None # "up" hoac "down"
 
     # Biến trạng thái, thay đổi liên tục khi chương trình chạy
+    mode_switch_time = None                 # Thời gian SAU khi đổi mode
+    mode_switch_cooldown = 1.5              # Thời gian chờ trước khi logic bài tập được kích hoạt, tính bằng giây
     excercise_mode = 1                      # Chế độ bài tập, mặc định là Squat
     stage = None                            # Trạng thái lên xuống        
     min_knee_angle = 180                    # Góc nhỏ nhất của đầu gối - dùng để so sánh lúc ngồi xuống
     min_hip_angle = 180                     # Góc nhỏ nhất của hông
+    standing_hip_y = None                   # Toạ độ hông lúc đứng
+    lowest_hip_y_reached = None             # Toạ độ hông thấp nhất đạt được
     min_elbow_angle = 180                   # Góc nhỏ nhất của khuỷu tay 
     down_frame_counter = 0                  # Đếm số frame lúc bắt đầu plank. Nếu đủ frame sẽ bắt đầu đếm thời gian, reset nếu tư thế hỏng
     timer_running = False                   # Tình trạng bộ đếm giờ plank
@@ -191,89 +196,104 @@ def main(video_source=0):
                 # Hiển thị tên bài tập và thống kê tương ứng
                 cv2.putText(frame, f"Bai tap: {cfg.name}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
 
-                # Logic đánh giá tuỳ theo bài tạp
-                if (excercise_mode == 1):
-                    cv2.putText(frame, f"So lan dung: {results[1]['correct']}", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
-                    cv2.putText(frame, f"So lan sai: {results[1]['wrong']}", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+                in_cooldown = mode_switch_time is not None and (time.time() - mode_switch_time) < mode_switch_cooldown
+                if not in_cooldown: # Nếu như đang không trong thời gian đợi
+                    # Logic đánh giá tuỳ theo bài tạp
+                    if (excercise_mode == 1):
+                        cv2.putText(frame, f"So lan dung: {results[1]['correct']}", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+                        cv2.putText(frame, f"So lan sai: {results[1]['wrong']}", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
 
-                    if knee_angle > cfg.knee_angle_up and hip_angle > cfg.hip_angle_up:                         # Nếu như góc đầu gối và hông hiện tại lớn hơn số góc định sẵn ở config
-                        if stage == "down":                                                                     # Nếu trạng thái là đang xuống
-                            if min_knee_angle < cfg.correct_knee_max and min_hip_angle < cfg.correct_hip_max:   # Nếu góc đầu gối và hông hiện tại nhỏ hơn yêu cầu
-                                results[1]["correct"] += 1                                                      # Tính là đúng
-                                print(f"Squat dung! So lan dung: {results[1]['correct']}")
-                            else:
-                                results[1]["wrong"] += 1                                                        
-                                print(f"Squat sai! So lan sai: {results[1]['wrong']}")
-                        # Reset
-                        stage = "up"
-                        min_knee_angle = 180
-                        min_hip_angle = 180
-
-                    if knee_angle < cfg.knee_angle_down_entry and stage == "up":
-                        stage = "down"
-
-                    # Cách tính đúng/sai của bài tập này là tính xuyên suốt rep, không phải tính lúc ngồi xuống
-                    if stage == "down":
-                        min_knee_angle = min(min_knee_angle, knee_angle)
-                        min_hip_angle = min(min_hip_angle, hip_angle)
-                        if knee_angle > cfg.correct_knee_max and hip_angle > cfg.correct_hip_max:
-                            cv2.putText(frame, "Tu the sai!", (10, 200), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-                        else:
-                            cv2.putText(frame, "Tu the dung!", (10, 200), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-
-                if (excercise_mode == 2):
-                    current_hold = results[2]["time_held"] + (time.time() - plank_start_time) if timer_running else results[2]["time_held"]       # Tinh thoi gian de hien thi: neu dang giu tu the thi cong them thoi gian dang chay vao tong da tich luy, neu khong thi chi hien tong da tich luy
-                    cv2.putText(frame, f"Thoi gian giu: {current_hold:.1f}s", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
-                    
-                    if (excercise_mode == 2):
-                        if hip_angle > cfg.plank_hip_min:
-                            down_frame_counter += 1
-                            # Chỉ bắt đầu đếm giờ sau khi giữ tư thế đủ lâu (60 frame / 30fps = 2s)
-                            if down_frame_counter >= cfg.hold_frames_required and not timer_running:
-                                timer_running = True
-                                plank_start_time = time.time()
-                        else: # Nếu như tư thế bị hỏng và đang bấm giờ thì cộng thời gian vừa giữ vào tổng rồi dừng bấm giờ
-                            if timer_running:
-                                results[2]["time_held"] += time.time() - plank_start_time
-                                timer_running = False
-                            down_frame_counter = 0      # Reset lại bộ đếm giữ tư thế
-
-                    # Hiển thị thời gian giữ tư thế
-                    if timer_running:
-                        current_hold = results[2]["time_held"] + (time.time() - plank_start_time)
-                    else:
-                        current_hold = results[2]["time_held"]
-
-                # Cách theo dõi của hít đất gần giống với squat nhưng tính góc khác
-                if (excercise_mode == 3):
-                    cv2.putText(frame, f"So lan dung: {results[3]['correct']}", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
-                    cv2.putText(frame, f"So lan sai: {results[3]['wrong']}", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
-                    is_body_straight = body_line_angle > cfg.body_straight_min # Người có đang thẳng không?
-
-                    if is_body_straight:
-                        if elbow_angle > cfg.elbow_angle_up:
-                            if stage == "down":
-                                if min_elbow_angle < cfg.correct_elbow_max:
-                                    results[3]["correct"] += 1
-                                    print(f"Hit dat dung! So lan dung: {results[3]['correct']}")
+                        if knee_angle > cfg.knee_angle_up and hip_angle > cfg.hip_angle_up:                         # Nếu như góc đầu gối và hông hiện tại lớn hơn số góc định sẵn ở config
+                            if stage == "down":                     
+                                hip_drop = (lowest_hip_y_reached - standing_hip_y) if standing_hip_y is not None else 0
+                                is_hip_drop = hip_drop > cfg.hip_drop_min                                           # Hàm giữ trạng thái hông có đang xuống không? (Hông xuống nếu như lớn hơn giá trị tối thiểu)
+                                
+                                # Nếu trạng thái là đang xuống VÀ đang ngồi xuống
+                                if is_hip_drop and min_knee_angle < cfg.correct_knee_max and min_hip_angle < cfg.correct_hip_max:   # Nếu góc đầu gối và hông hiện tại nhỏ hơn yêu cầu
+                                    results[1]["correct"] += 1                                                      # Tính là đúng
+                                    print(f"Squat dung! So lan dung: {results[1]['correct']}")
                                 else:
-                                    results[3]["wrong"] += 1
-                                    print(f"Hit dat sai! So lan sai: {results[3]['wrong']}")
+                                    results[1]["wrong"] += 1                                                        
+                                    print(f"Squat sai! So lan sai: {results[1]['wrong']}")
+                            # Reset
                             stage = "up"
-                            min_elbow_angle = 180
+                            min_knee_angle = 180
+                            min_hip_angle = 180
+                            standing_hip_y = hip[1]     # Ghi lại toạ độ y hông lúc đứng để so sánh - Nhớ là giá trị trong khoảng (0-1)
+                            lowest_hip_y_reached = hip[1]  # Reset toạ độ hông
 
-                        if elbow_angle < cfg.elbow_angle_down_entry and stage == "up":
+                        if knee_angle < cfg.knee_angle_down_entry and stage == "up":
                             stage = "down"
 
+                        # Cách tính đúng/sai của bài tập này là tính xuyên suốt rep, không phải tính lúc ngồi xuống
                         if stage == "down":
-                            min_elbow_angle = min(min_elbow_angle, elbow_angle)
-                            if elbow_angle > cfg.correct_elbow_max:
+                            min_knee_angle = min(min_knee_angle, knee_angle)
+                            min_hip_angle = min(min_hip_angle, hip_angle)
+
+                            if lowest_hip_y_reached is not None:
+                                lowest_hip_y_reached = max(lowest_hip_y_reached, hip[1])  # y lon hon = thap hon tren man hinh
+                            if knee_angle > cfg.correct_knee_max and hip_angle > cfg.correct_hip_max:
                                 cv2.putText(frame, "Tu the sai!", (10, 200), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
                             else:
                                 cv2.putText(frame, "Tu the dung!", (10, 200), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-                    else:
-                        cv2.putText(frame, "Vui long vao tu the hit dat!", (10, 200), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)   # Không thẳng = không tính logic đúng sai          
+
+                    if (excercise_mode == 2):
+                        current_hold = results[2]["time_held"] + (time.time() - plank_start_time) if timer_running else results[2]["time_held"]       # Tinh thoi gian de hien thi: neu dang giu tu the thi cong them thoi gian dang chay vao tong da tich luy, neu khong thi chi hien tong da tich luy
+                        cv2.putText(frame, f"Thoi gian giu: {current_hold:.1f}s", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
                         
+                        if (excercise_mode == 2):
+                            if hip_angle > cfg.plank_hip_min:
+                                down_frame_counter += 1
+                                # Chỉ bắt đầu đếm giờ sau khi giữ tư thế đủ lâu (60 frame / 30fps = 2s)
+                                if down_frame_counter >= cfg.hold_frames_required and not timer_running:
+                                    timer_running = True
+                                    plank_start_time = time.time()
+                            else: # Nếu như tư thế bị hỏng và đang bấm giờ thì cộng thời gian vừa giữ vào tổng rồi dừng bấm giờ
+                                if timer_running:
+                                    results[2]["time_held"] += time.time() - plank_start_time
+                                    timer_running = False
+                                down_frame_counter = 0      # Reset lại bộ đếm giữ tư thế
+
+                        # Hiển thị thời gian giữ tư thế
+                        if timer_running:
+                            current_hold = results[2]["time_held"] + (time.time() - plank_start_time)
+                        else:
+                            current_hold = results[2]["time_held"]
+
+                    # Cách theo dõi của hít đất gần giống với squat nhưng tính góc khác
+                    if (excercise_mode == 3):
+                        cv2.putText(frame, f"So lan dung: {results[3]['correct']}", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+                        cv2.putText(frame, f"So lan sai: {results[3]['wrong']}", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+                        is_body_straight = body_line_angle > cfg.body_straight_min # Người có đang thẳng không?
+
+                        if is_body_straight:
+                            if elbow_angle > cfg.elbow_angle_up:
+                                if stage == "down":
+                                    if min_elbow_angle < cfg.correct_elbow_max:
+                                        results[3]["correct"] += 1
+                                        print(f"Hit dat dung! So lan dung: {results[3]['correct']}")
+                                    else:
+                                        results[3]["wrong"] += 1
+                                        print(f"Hit dat sai! So lan sai: {results[3]['wrong']}")
+                                stage = "up"
+                                min_elbow_angle = 180
+
+                            if elbow_angle < cfg.elbow_angle_down_entry and stage == "up":
+                                stage = "down"
+
+                            if stage == "down":
+                                min_elbow_angle = min(min_elbow_angle, elbow_angle)
+                                if elbow_angle > cfg.correct_elbow_max:
+                                    cv2.putText(frame, "Tu the sai!", (10, 200), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+                                else:
+                                    cv2.putText(frame, "Tu the dung!", (10, 200), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+                        else:
+                            cv2.putText(frame, "Vui long vao tu the hit dat!", (10, 200), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)   # Không thẳng = không tính logic đúng sai          
+                else:
+                    remaining = mode_switch_cooldown - (time.time() - mode_switch_time)
+                    cv2.putText(frame, f"Chuan bi: {remaining:.1f}s", (10, 200),
+                                
+                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
                 draw_landmarks_manual(frame, landmarks)
 
                 # Thông tin bài tập hiện tại + các góc cơ thể liên quan
@@ -315,6 +335,7 @@ def main(video_source=0):
                 min_hip_angle = 180
                 min_elbow_angle = 180 
                 down_frame_counter = 0
+                mode_switch_time = time.time()              # Ghi lại thời điểm chuyển bài tập
                 print(f"Chuyen sang bai tap: {cfg.name}")
                 
             cv2.imshow("Phan tich dong tac the duc - Nhan Q de thoat", frame)
