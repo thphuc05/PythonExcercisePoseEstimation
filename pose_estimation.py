@@ -131,6 +131,33 @@ def draw_landmarks_manual(frame, landmarks):
     for lm in landmarks:
         cv2.circle(frame, (int(lm.x * w), int(lm.y * h)), 2, (0, 0, 255), -1)
 
+# Hàm để trả về phía bên trá/phải của cơ thể người. Lấy giá trị là điểm mốc của các khớp - mặc định là bên trái 
+def get_side(landmarks, side="left"):
+    if side == "left":
+        return {
+            "hip": landmarks[PoseLandmark.LEFT_HIP],
+            "knee": landmarks[PoseLandmark.LEFT_KNEE],
+            "ankle": landmarks[PoseLandmark.LEFT_ANKLE],
+            "shoulder": landmarks[PoseLandmark.LEFT_SHOULDER],
+            "elbow": landmarks[PoseLandmark.LEFT_ELBOW],
+            "wrist": landmarks[PoseLandmark.LEFT_WRIST],
+            "foot" : landmarks[PoseLandmark.LEFT_FOOT_INDEX],
+        }
+    else:
+        return {
+            "hip": landmarks[PoseLandmark.RIGHT_HIP],
+            "knee": landmarks[PoseLandmark.RIGHT_KNEE],
+            "ankle": landmarks[PoseLandmark.RIGHT_ANKLE],
+            "shoulder": landmarks[PoseLandmark.RIGHT_SHOULDER],
+            "elbow": landmarks[PoseLandmark.RIGHT_ELBOW],
+            "wrist": landmarks[PoseLandmark.RIGHT_WRIST],
+            "foot" : landmarks[PoseLandmark.RIGHT_FOOT_INDEX],
+        }
+
+# Hàm trả về giá trị của từng điểm mốc
+def side_visibility(side_lm, needed_points):
+    return min(side_lm[p].visibility for p in needed_points)        # Ta lấy điểm có độ tin cậy thấp nhất, đảm bảo tất cả một bên người có các điểm mốc 100% là tin cậy là của một bên
+
 def main(video_source=0):
     cap = cv2.VideoCapture(video_source)
     stage = None # "up" hoac "down"
@@ -148,6 +175,8 @@ def main(video_source=0):
     down_frame_counter = 0                  # Đếm số frame lúc bắt đầu plank. Nếu đủ frame sẽ bắt đầu đếm thời gian, reset nếu tư thế hỏng
     timer_running = False                   # Tình trạng bộ đếm giờ plank
     plank_start_time = None                 # Thời gian bắt đầu tính giờ Plank
+    last_side = None                        # Giữ phía bên người ở lần thay đổi cuối
+
     results = {                             # Kết quả cho từng bài tập
         1: {"correct": 0, "wrong": 0},
         2: {"time_held": 0.0},
@@ -172,18 +201,36 @@ def main(video_source=0):
             # Hàm ghi kết quả
             pose_result = landmarker.detect_for_video(mp_image, timestamp_ms)
 
+
             if pose_result.pose_landmarks:
                 landmarks = pose_result.pose_landmarks[0]
 
-                # Toạ độ bên trái
-                hip = [landmarks[PoseLandmark.LEFT_HIP].x, landmarks[PoseLandmark.LEFT_HIP].y]                      # Hông
-                knee = [landmarks[PoseLandmark.LEFT_KNEE].x, landmarks[PoseLandmark.LEFT_KNEE].y]                   # Đầu gối
-                ankle = [landmarks[PoseLandmark.LEFT_ANKLE].x, landmarks[PoseLandmark.LEFT_ANKLE].y]                # Mắt cá chân
-                shouder = [landmarks[PoseLandmark.LEFT_SHOULDER].x, landmarks[PoseLandmark.LEFT_SHOULDER].y]        # Vai
-                elbow = [landmarks[PoseLandmark.LEFT_ELBOW].x, landmarks[PoseLandmark.LEFT_ELBOW].y]                # Khuỷu tay
-                wrist = [landmarks[PoseLandmark.LEFT_WRIST].x, landmarks[PoseLandmark.LEFT_WRIST].y]                # Cổ tay
-                foot = [landmarks[PoseLandmark.LEFT_FOOT_INDEX].x, landmarks[PoseLandmark.LEFT_FOOT_INDEX].y]       # Bàn Chân
+                # Đầu tiên, lấy toàn bộ các điểm của một bên người
+                left = get_side(landmarks, "left") 
+                right = get_side(landmarks, "right")
+                
+                # Sau đó, tính toán độ tin cậy của từng bộ phận cần sử dụng
+                left_vis = side_visibility(left, ["hip", "knee", "ankle", "shoulder", "elbow", "wrist", "foot"])
+                right_vis = side_visibility(right, ["hip", "knee", "ankle", "shoulder", "elbow", "wrist", "foot"])
+                
+                # Chọn bên người cần theo dõi, tuỳ theo bên nào đáng tin cậy hơn
+                chosen = left if left_vis >= right_vis else right               # NOTE: Nên nhớ là đang lấy điểm có độ tin cậy thấp nhất, do nếu lấy thấp nhất, mấy điểm sau đảm bảo là đang theo dõi cùng 1 bên người
+                chosen_side = "trai" if left_vis >= right_vis else "phai"       # Dùng cho việc debug - không thật sự cần thiết
+                
+                hip = [chosen["hip"].x, chosen["hip"].y]                    # Hông
+                knee = [chosen["knee"].x, chosen["knee"].y]                 # Đầu gối
+                ankle = [chosen["ankle"].x, chosen["ankle"].y]              # Mắt cá chân
+                shouder = [chosen["shoulder"].x, chosen["shoulder"].y]      # Vai
+                elbow = [chosen["elbow"].x, chosen["elbow"].y]              # Khuỷu tay
+                wrist = [chosen["wrist"].x, chosen["wrist"].y]              # Cổ tay
+                foot = [chosen["foot"].x, chosen["foot"].y]                 # Bàn chân
+        
+                # Debug - Đang theo dõi bên nào?
+                if chosen_side != last_side:                     # Nếu như bên đã chọn khác bên lần cuối chọn thì viết lên console - mục đích để tránh spam
+                    print(f"Dang theo doi ben: {chosen_side}")
+                    last_side = chosen_side
 
+                # Tính góc khớp
                 hip_angle = calculate_angle(knee, hip, shouder) # Góc hông
                 knee_angle = calculate_angle(hip, knee, ankle) # Góc đầu gối
                 elbow_angle = calculate_angle(wrist, elbow, shouder) # Góc khuỷu tay
